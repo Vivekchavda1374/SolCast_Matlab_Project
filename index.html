@@ -247,512 +247,615 @@
 
     <script>
         // Global variables
-        let latitude, longitude, cityName;
-        let solarData = [];
-        let map, marker;
-        
-        // Initialize default dates
-        document.addEventListener('DOMContentLoaded', function() {
-            const today = new Date();
-            const sixMonthsAgo = new Date();
-            sixMonthsAgo.setMonth(today.getMonth() - 6);
+let latitude, longitude, cityName;
+let solarData = [];
+let map, marker;
+
+// Initialize default dates
+document.addEventListener('DOMContentLoaded', function() {
+    const today = new Date();
+    const sixMonthsAgo = new Date();
+    sixMonthsAgo.setMonth(today.getMonth() - 6);
+    
+    document.getElementById('startDate').value = formatDateForInput(sixMonthsAgo);
+    document.getElementById('endDate').value = formatDateForInput(today);
+    document.getElementById('implDate').value = formatDateForInput(today);
+    
+    // Set default energy requirement
+    document.getElementById('requiredEnergy').value = "10";
+    
+    // Set up tab navigation
+    setupTabNavigation();
+    
+    // Try to auto-detect location on page load with delay to ensure DOM is ready
+    setTimeout(() => {
+        document.getElementById('autoDetectLocation') && document.getElementById('autoDetectLocation').click();
+    }, 1000);
+});
+
+// Format date for input fields
+function formatDateForInput(date) {
+    return date.toISOString().split('T')[0];
+}
+
+// Tab navigation setup function
+function setupTabNavigation() {
+    const tabs = document.querySelectorAll('.tab');
+    if (!tabs || tabs.length === 0) return;
+    
+    tabs.forEach(tab => {
+        tab.addEventListener('click', function() {
+            // Remove active class from all tabs and content
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
             
-            document.getElementById('startDate').value = formatDateForInput(sixMonthsAgo);
-            document.getElementById('endDate').value = formatDateForInput(today);
-            document.getElementById('implDate').value = formatDateForInput(today);
-            
-            // Set default energy requirement
-            document.getElementById('requiredEnergy').value = "10";
-            
-            // Try to auto-detect location on page load
-            setTimeout(() => {
-                document.getElementById('autoDetectLocation').click();
-            }, 500);
+            // Add active class to clicked tab and corresponding content
+            this.classList.add('active');
+            const tabContent = document.getElementById(this.dataset.tab);
+            if (tabContent) tabContent.classList.add('active');
         });
-        
-        // Format date for input fields
-        function formatDateForInput(date) {
-            return date.toISOString().split('T')[0];
-        }
-        
-        // Tab navigation
-        document.querySelectorAll('.tab').forEach(tab => {
-            tab.addEventListener('click', function() {
-                // Remove active class from all tabs and content
-                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-                document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-                
-                // Add active class to clicked tab and corresponding content
-                this.classList.add('active');
-                document.getElementById(this.dataset.tab).classList.add('active');
-            });
-        });
-        
-        // Auto-detect location
-        document.getElementById('autoDetectLocation').addEventListener('click', function() {
-            if (navigator.geolocation) {
-                // Show spinner
-                document.getElementById('locationSpinner').classList.remove('hidden');
-                document.getElementById('locationError').classList.add('hidden');
-                
-                navigator.geolocation.getCurrentPosition(
-                    async function(position) {
-                        latitude = position.coords.latitude;
-                        longitude = position.coords.longitude;
+    });
+}
+
+// Auto-detect location
+document.addEventListener('click', function(event) {
+    if (event.target.id === 'autoDetectLocation' || event.target.closest('#autoDetectLocation')) {
+        if (navigator.geolocation) {
+            // Show spinner
+            const spinner = document.getElementById('locationSpinner');
+            if (spinner) spinner.classList.remove('hidden');
+            
+            const locationError = document.getElementById('locationError');
+            if (locationError) locationError.classList.add('hidden');
+            
+            navigator.geolocation.getCurrentPosition(
+                async function(position) {
+                    latitude = position.coords.latitude;
+                    longitude = position.coords.longitude;
+                    
+                    // Reverse geocode to get city name
+                    try {
+                        const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=10`);
+                        const data = await response.json();
                         
-                        // Reverse geocode to get city name
-                        try {
-                            const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=10`);
-                            const data = await response.json();
+                        if (data && data.address) {
+                            cityName = data.address.city || data.address.town || data.address.village || data.address.hamlet || data.address.county || 'Unknown location';
                             
-                            if (data.address) {
-                                cityName = data.address.city || data.address.town || data.address.village || data.address.hamlet || data.address.county || 'Unknown location';
-                                
-                                // Update UI
-                                document.getElementById('locationName').textContent = cityName;
-                                document.getElementById('latitude').textContent = latitude.toFixed(4);
-                                document.getElementById('longitude').textContent = longitude.toFixed(4);
-                                
-                                // Show results
-                                document.getElementById('locationResult').classList.remove('hidden');
-                                
-                                // Pre-fill implementation coordinates
-                                document.getElementById('currentLat').value = latitude;
-                                document.getElementById('currentLon').value = longitude;
-                                
-                                // Show map
-                                showMap(latitude, longitude, cityName);
-                                
-                                // Show success message
-                                const successMessage = document.createElement('div');
-                                successMessage.className = 'success';
-                                successMessage.textContent = `Location successfully detected: ${cityName}`;
-                                document.getElementById('locationResult').prepend(successMessage);
-                                
-                                // Hide spinner
-                                document.getElementById('locationSpinner').classList.add('hidden');
-                            } else {
-                                throw new Error('Could not determine location name');
-                            }
-                        } catch (error) {
-                            // Handle error but still use the coordinates
-                            cityName = 'Your Location';
-                            document.getElementById('locationName').textContent = cityName;
-                            document.getElementById('latitude').textContent = latitude.toFixed(4);
-                            document.getElementById('longitude').textContent = longitude.toFixed(4);
-                            
-                            // Show results
-                            document.getElementById('locationResult').classList.remove('hidden');
-                            
-                            // Pre-fill implementation coordinates
-                            document.getElementById('currentLat').value = latitude;
-                            document.getElementById('currentLon').value = longitude;
-                            
-                            // Show map
-                            showMap(latitude, longitude, cityName);
+                            // Update UI
+                            updateLocationUI(cityName, latitude, longitude);
                             
                             // Hide spinner
-                            document.getElementById('locationSpinner').classList.add('hidden');
+                            if (spinner) spinner.classList.add('hidden');
+                        } else {
+                            throw new Error('Could not determine location name');
                         }
-                    },
-                    function(error) {
-                        // Hide spinner
-                        document.getElementById('locationSpinner').classList.add('hidden');
+                    } catch (error) {
+                        // Handle error but still use the coordinates
+                        cityName = 'Your Location';
+                        updateLocationUI(cityName, latitude, longitude);
                         
-                        // Show error based on error code
-                        let errorMessage;
-                        switch(error.code) {
-                            case error.PERMISSION_DENIED:
-                                errorMessage = "Location access was denied. Please enter your location manually.";
-                                break;
-                            case error.POSITION_UNAVAILABLE:
-                                errorMessage = "Location information is unavailable. Please enter your location manually.";
-                                break;
-                            case error.TIMEOUT:
-                                errorMessage = "The request to get user location timed out. Please enter your location manually.";
-                                break;
-                            default:
-                                errorMessage = "An unknown error occurred. Please enter your location manually.";
-                                break;
-                        }
-                        showError('locationError', errorMessage);
+                        // Hide spinner
+                        if (spinner) spinner.classList.add('hidden');
                     }
-                );
-            } else {
-                showError('locationError', "Geolocation is not supported by this browser. Please enter your location manually.");
-            }
-        });
+                },
+                function(error) {
+                    // Hide spinner
+                    if (spinner) spinner.classList.add('hidden');
+                    
+                    // Show error based on error code
+                    let errorMessage;
+                    switch(error.code) {
+                        case error.PERMISSION_DENIED:
+                            errorMessage = "Location access was denied. Please enter your location manually.";
+                            break;
+                        case error.POSITION_UNAVAILABLE:
+                            errorMessage = "Location information is unavailable. Please enter your location manually.";
+                            break;
+                        case error.TIMEOUT:
+                            errorMessage = "The request to get user location timed out. Please enter your location manually.";
+                            break;
+                        default:
+                            errorMessage = "An unknown error occurred. Please enter your location manually.";
+                            break;
+                    }
+                    showError('locationError', errorMessage);
+                }
+            );
+        } else {
+            showError('locationError', "Geolocation is not supported by this browser. Please enter your location manually.");
+        }
+    }
+});
+
+// Update location UI elements
+function updateLocationUI(cityName, lat, lon) {
+    const locationName = document.getElementById('locationName');
+    const latitudeElement = document.getElementById('latitude');
+    const longitudeElement = document.getElementById('longitude');
+    const locationResult = document.getElementById('locationResult');
+    const currentLat = document.getElementById('currentLat');
+    const currentLon = document.getElementById('currentLon');
+    
+    if (locationName) locationName.textContent = cityName;
+    if (latitudeElement) latitudeElement.textContent = lat.toFixed(4);
+    if (longitudeElement) longitudeElement.textContent = lon.toFixed(4);
+    if (locationResult) locationResult.classList.remove('hidden');
+    
+    // Pre-fill implementation coordinates
+    if (currentLat) currentLat.value = lat;
+    if (currentLon) currentLon.value = lon;
+    
+    // Show map
+    showMap(lat, lon, cityName);
+    
+    // Show success message
+    const successMessage = document.createElement('div');
+    successMessage.className = 'success';
+    successMessage.textContent = `Location successfully detected: ${cityName}`;
+    
+    if (locationResult) {
+        locationResult.insertBefore(successMessage, locationResult.firstChild);
         
-        // Find Location by city name
-        document.getElementById('findLocation').addEventListener('click', async function() {
-            const cityInput = document.getElementById('cityName').value.trim();
-            if (!cityInput) {
-                showError('locationError', 'Please enter a city name');
+        // Remove success message after 5 seconds
+        setTimeout(() => {
+            if (successMessage.parentNode) {
+                successMessage.parentNode.removeChild(successMessage);
+            }
+        }, 5000);
+    }
+}
+
+// Find Location by city name
+document.addEventListener('click', async function(event) {
+    if (event.target.id === 'findLocation') {
+        const cityInput = document.getElementById('cityName');
+        if (!cityInput || !cityInput.value.trim()) {
+            showError('locationError', 'Please enter a city name');
+            return;
+        }
+        
+        try {
+            const response = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(cityInput.value.trim())}&format=json&limit=1`);
+            const data = await response.json();
+            
+            if (!data || data.length === 0) {
+                showError('locationError', 'City not found! Please check the name and try again.');
                 return;
             }
             
-            try {
-                const response = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(cityInput)}&format=json&limit=1`);
-                const data = await response.json();
-                
-                if (data.length === 0) {
-                    showError('locationError', 'City not found! Please check the name and try again.');
-                    return;
-                }
-                
-                // Store global variables
-                latitude = parseFloat(data[0].lat);
-                longitude = parseFloat(data[0].lon);
-                cityName = data[0].display_name.split(',')[0];
-                
-                // Update UI
-                document.getElementById('locationName').textContent = cityName;
-                document.getElementById('latitude').textContent = latitude.toFixed(4);
-                document.getElementById('longitude').textContent = longitude.toFixed(4);
-                
-                // Show results
-                document.getElementById('locationResult').classList.remove('hidden');
-                document.getElementById('locationError').classList.add('hidden');
-                
-                // Pre-fill implementation coordinates
-                document.getElementById('currentLat').value = latitude;
-                document.getElementById('currentLon').value = longitude;
-                
-                // Show map
-                showMap(latitude, longitude, cityName);
-                
-            } catch (error) {
-                showError('locationError', 'Error fetching location data: ' + error.message);
-            }
-        });
-        
-        // Open map
-        document.getElementById('openMap').addEventListener('click', function() {
-            if (latitude && longitude) {
-                showMap(latitude, longitude, cityName);
-            } else {
-                showError('locationError', 'Please detect or search for a location first');
-            }
-        });
-        
-        // Show map
-        function showMap(lat, lon, name) {
-            document.getElementById('map').classList.remove('hidden');
+            // Store global variables
+            latitude = parseFloat(data[0].lat);
+            longitude = parseFloat(data[0].lon);
+            cityName = data[0].display_name.split(',')[0];
             
-            // If the map doesn't exist, create it
-            if (!map) {
-                // Load the map script dynamically
-                const script = document.createElement('script');
-                script.src = 'https://unpkg.com/leaflet@1.7.1/dist/leaflet.js';
-                script.integrity = 'sha512-XQoYMqMTK8LvdxXYG3nZ448hOEQiglfqkJs1NOQV44cWnUrBc8PkAOcXy20w0vlaXaVUearIOBhiXZ5V3ynxwA==';
-                script.crossOrigin = '';
-                document.head.appendChild(script);
-                
-                // Load the map stylesheet
-                const link = document.createElement('link');
-                link.rel = 'stylesheet';
-                link.href = 'https://unpkg.com/leaflet@1.7.1/dist/leaflet.css';
-                link.integrity = 'sha512-xodZBNTC5n17Xt2atTPuE1HxjVMSvLVW9ocqUKLsCC5CXdbqCmblAshOMAS6/keqq/sMZMZ19scR4PsZChSR7A==';
-                link.crossOrigin = '';
-                document.head.appendChild(link);
-                
-                script.onload = function() {
-                    initMap(lat, lon, name);
-                };
-            } else {
-                // If map exists, just update the marker
-                map.setView([lat, lon], 13);
-                if (marker) {
-                    marker.setLatLng([lat, lon]).bindPopup(name).openPopup();
-                } else {
-                    marker = L.marker([lat, lon]).addTo(map).bindPopup(name).openPopup();
-                }
-            }
+            // Update UI
+            updateLocationUI(cityName, latitude, longitude);
+            
+            // Hide error
+            const locationError = document.getElementById('locationError');
+            if (locationError) locationError.classList.add('hidden');
+            
+        } catch (error) {
+            showError('locationError', 'Error fetching location data: ' + error.message);
         }
-        
-        // Initialize map
-        function initMap(lat, lon, name) {
-            map = L.map('map').setView([lat, lon], 13);
-            
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-            }).addTo(map);
-            
+    }
+});
+
+// Open map
+document.addEventListener('click', function(event) {
+    if (event.target.id === 'openMap') {
+        if (latitude && longitude) {
+            showMap(latitude, longitude, cityName);
+        } else {
+            showError('locationError', 'Please detect or search for a location first');
+        }
+    }
+});
+
+// Show map
+function showMap(lat, lon, name) {
+    const mapElement = document.getElementById('map');
+    if (!mapElement) return;
+    
+    mapElement.classList.remove('hidden');
+    
+    // If Leaflet is not loaded yet, load it dynamically
+    if (typeof L === 'undefined') {
+        loadLeafletLibrary().then(() => {
+            initMap(lat, lon, name);
+        });
+    } else if (!map) {
+        // If the map doesn't exist but Leaflet is loaded, create it
+        initMap(lat, lon, name);
+    } else {
+        // If map exists, just update the marker
+        map.setView([lat, lon], 13);
+        if (marker) {
+            marker.setLatLng([lat, lon]).bindPopup(name).openPopup();
+        } else {
             marker = L.marker([lat, lon]).addTo(map).bindPopup(name).openPopup();
+        }
+    }
+}
+
+// Load Leaflet library
+function loadLeafletLibrary() {
+    return new Promise((resolve) => {
+        // Load the map script dynamically
+        const script = document.createElement('script');
+        script.src = 'https://unpkg.com/leaflet@1.7.1/dist/leaflet.js';
+        script.integrity = 'sha512-XQoYMqMTK8LvdxXYG3nZ448hOEQiglfqkJs1NOQV44cWnUrBc8PkAOcXy20w0vlaXaVUearIOBhiXZ5V3ynxwA==';
+        script.crossOrigin = '';
+        document.head.appendChild(script);
+        
+        // Load the map stylesheet
+        const link = document.createElement('link');
+        link.rel = 'stylesheet';
+        link.href = 'https://unpkg.com/leaflet@1.7.1/dist/leaflet.css';
+        link.integrity = 'sha512-xodZBNTC5n17Xt2atTPuE1HxjVMSvLVW9ocqUKLsCC5CXdbqCmblAshOMAS6/keqq/sMZMZ19scR4PsZChSR7A==';
+        link.crossOrigin = '';
+        document.head.appendChild(link);
+        
+        script.onload = function() {
+            resolve();
+        };
+    });
+}
+
+// Initialize map
+function initMap(lat, lon, name) {
+    try {
+        map = L.map('map').setView([lat, lon], 13);
+        
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        }).addTo(map);
+        
+        marker = L.marker([lat, lon]).addTo(map).bindPopup(name).openPopup();
+        
+        // Make the map clickable to select a specific location
+        map.on('click', function(e) {
+            const newLat = e.latlng.lat;
+            const newLon = e.latlng.lng;
             
-            // Make the map clickable to select a specific location
-            map.on('click', function(e) {
-                const newLat = e.latlng.lat;
-                const newLon = e.latlng.lng;
-                
-                // Update marker
-                if (marker) {
-                    marker.setLatLng([newLat, newLon]).bindPopup('Selected Location').openPopup();
-                } else {
-                    marker = L.marker([newLat, newLon]).addTo(map).bindPopup('Selected Location').openPopup();
-                }
-                
-                // Update coordinates
-                document.getElementById('currentLat').value = newLat;
-                document.getElementById('currentLon').value = newLon;
-                
-                // Update global variables
-                latitude = newLat;
-                longitude = newLon;
-                
-                // Show a notification
-                const notification = document.createElement('div');
-                notification.className = 'success';
-                notification.textContent = `Location updated: Lat ${newLat.toFixed(4)}, Lon ${newLon.toFixed(4)}`;
-                notification.style.position = 'absolute';
-                notification.style.top = '10px';
-                notification.style.left = '50%';
-                notification.style.transform = 'translateX(-50%)';
-                notification.style.zIndex = '1000';
-                notification.style.padding = '10px';
-                notification.style.borderRadius = '4px';
-                document.body.appendChild(notification);
-                
-                setTimeout(() => {
-                    notification.remove();
-                }, 3000);
-            });
+            // Update marker
+            if (marker) {
+                marker.setLatLng([newLat, newLon]).bindPopup('Selected Location').openPopup();
+            } else {
+                marker = L.marker([newLat, newLon]).addTo(map).bindPopup('Selected Location').openPopup();
+            }
+            
+            // Update coordinates
+            const currentLatElement = document.getElementById('currentLat');
+            const currentLonElement = document.getElementById('currentLon');
+            
+            if (currentLatElement) currentLatElement.value = newLat;
+            if (currentLonElement) currentLonElement.value = newLon;
+            
+            // Update global variables
+            latitude = newLat;
+            longitude = newLon;
+            
+            // Show a notification
+            showToast(`Location updated: Lat ${newLat.toFixed(4)}, Lon ${newLon.toFixed(4)}`);
+        });
+    } catch (error) {
+        console.error("Error initializing map:", error);
+        showError('locationError', 'Error initializing map: ' + error.message);
+    }
+}
+
+// Show toast notification
+function showToast(message) {
+    const notification = document.createElement('div');
+    notification.className = 'success';
+    notification.textContent = message;
+    notification.style.position = 'fixed';
+    notification.style.top = '10px';
+    notification.style.left = '50%';
+    notification.style.transform = 'translateX(-50%)';
+    notification.style.zIndex = '1000';
+    notification.style.padding = '10px';
+    notification.style.borderRadius = '4px';
+    document.body.appendChild(notification);
+    
+    setTimeout(() => {
+        if (notification.parentNode) {
+            notification.parentNode.removeChild(notification);
+        }
+    }, 3000);
+}
+
+// Fetch Solar Radiation Data
+document.addEventListener('click', async function(event) {
+    if (event.target.id === 'fetchRadiation') {
+        if (!latitude || !longitude) {
+            showError('radiationError', 'Please find a location first');
+            return;
         }
         
-        // Fetch Solar Radiation Data
-        document.getElementById('fetchRadiation').addEventListener('click', async function() {
-            if (!latitude || !longitude) {
-                showError('radiationError', 'Please find a location first');
+        const startDate = document.getElementById('startDate');
+        const endDate = document.getElementById('endDate');
+        
+        if (!startDate || !endDate || !startDate.value || !endDate.value) {
+            showError('radiationError', 'Please select both start and end dates');
+            return;
+        }
+        
+        try {
+            // Format dates for NASA API
+            const formattedStartDate = moment(startDate.value).format('YYYYMMDD');
+            const formattedEndDate = moment(endDate.value).format('YYYYMMDD');
+            
+            const api_url = `https://power.larc.nasa.gov/api/temporal/daily/point?parameters=ALLSKY_SFC_SW_DWN&community=RE&longitude=${longitude}&latitude=${latitude}&start=${formattedStartDate}&end=${formattedEndDate}&format=JSON`;
+            
+            const response = await fetch(api_url);
+            const data = await response.json();
+            
+            if (!data.properties || !data.properties.parameter || !data.properties.parameter.ALLSKY_SFC_SW_DWN) {
+                showError('radiationError', 'No radiation data available for the selected dates');
                 return;
             }
             
-            const startDate = document.getElementById('startDate').value;
-            const endDate = document.getElementById('endDate').value;
+            const radiationData = data.properties.parameter.ALLSKY_SFC_SW_DWN;
+            const dates = Object.keys(radiationData);
             
-            if (!startDate || !endDate) {
-                showError('radiationError', 'Please select both start and end dates');
-                return;
-            }
+            // Process data
+            solarData = dates.map(date => {
+                return {
+                    date: moment(date.replace(/x/g, ''), 'YYYYMMDD').format('YYYY-MM-DD'),
+                    value: radiationData[date]
+                };
+            });
             
-            try {
-                // Format dates for NASA API
-                const formattedStartDate = moment(startDate).format('YYYYMMDD');
-                const formattedEndDate = moment(endDate).format('YYYYMMDD');
-                
-                const api_url = `https://power.larc.nasa.gov/api/temporal/daily/point?parameters=ALLSKY_SFC_SW_DWN&community=RE&longitude=${longitude}&latitude=${latitude}&start=${formattedStartDate}&end=${formattedEndDate}&format=JSON`;
-                
-                const response = await fetch(api_url);
-                const data = await response.json();
-                
-                if (!data.properties || !data.properties.parameter || !data.properties.parameter.ALLSKY_SFC_SW_DWN) {
-                    showError('radiationError', 'No radiation data available for the selected dates');
-                    return;
-                }
-                
-                const radiationData = data.properties.parameter.ALLSKY_SFC_SW_DWN;
-                const dates = Object.keys(radiationData);
-                
-                // Process data
-                solarData = dates.map(date => {
-                    return {
-                        date: moment(date.replace('x', ''), 'YYYYMMDD').format('YYYY-MM-DD'),
-                        value: radiationData[date]
-                    };
-                });
-                
-                // Plot radiation data
-                plotRadiationData(solarData);
-                document.getElementById('radiationError').classList.add('hidden');
-                
-                // Show success message
+            // Plot radiation data
+            plotRadiationData(solarData);
+            
+            const radiationError = document.getElementById('radiationError');
+            if (radiationError) radiationError.classList.add('hidden');
+            
+            // Show success message
+            const radiationChart = document.getElementById('radiationChart');
+            if (radiationChart) {
                 const successMessage = document.createElement('div');
                 successMessage.className = 'success';
                 successMessage.textContent = `Successfully fetched solar radiation data for ${cityName}`;
-                document.getElementById('radiationChart').before(successMessage);
+                radiationChart.parentNode.insertBefore(successMessage, radiationChart);
                 
                 setTimeout(() => {
-                    successMessage.remove();
+                    if (successMessage.parentNode) {
+                        successMessage.parentNode.removeChild(successMessage);
+                    }
                 }, 5000);
+            }
+            
+            // Move to next tab
+            const analysisTab = document.querySelector('.tab[data-tab="analysis"]');
+            if (analysisTab) analysisTab.click();
+            
+        } catch (error) {
+            console.error("Error fetching radiation data:", error);
+            showError('radiationError', 'Error fetching radiation data: ' + error.message);
+        }
+    }
+});
+
+// Run Analysis
+document.addEventListener('click', function(event) {
+    if (event.target.id === 'runAnalysis') {
+        if (solarData.length === 0) {
+            showError('analysisError', 'Please fetch solar radiation data first');
+            return;
+        }
+        
+        const currentLatElement = document.getElementById('currentLat');
+        const currentLonElement = document.getElementById('currentLon');
+        const implDateElement = document.getElementById('implDate');
+        const requiredEnergyElement = document.getElementById('requiredEnergy');
+        const useRotationElement = document.getElementById('useRotation');
+        
+        if (!currentLatElement || !currentLonElement || !implDateElement || 
+            !requiredEnergyElement || !useRotationElement) {
+            showError('analysisError', 'Required form elements are missing');
+            return;
+        }
+        
+        const currentLat = parseFloat(currentLatElement.value);
+        const currentLon = parseFloat(currentLonElement.value);
+        const implDate = implDateElement.value;
+        const requiredEnergy = parseFloat(requiredEnergyElement.value);
+        const useRotation = useRotationElement.value;
+        
+        if (isNaN(currentLat) || isNaN(currentLon) || !implDate || isNaN(requiredEnergy)) {
+            showError('analysisError', 'Please fill all fields with valid values');
+            return;
+        }
+        
+        // Run analysis
+        runSolarAnalysis(currentLat, currentLon, implDate, requiredEnergy, useRotation);
+    }
+});
+
+// Generate 3D Terrain
+document.addEventListener('click', function(event) {
+    if (event.target.id === 'generate3DTerrain') {
+        const currentLatElement = document.getElementById('currentLat');
+        const currentLonElement = document.getElementById('currentLon');
+        
+        if (!currentLatElement || !currentLonElement) {
+            showError('terrainError', 'Coordinate input fields are missing');
+            return;
+        }
+        
+        const currentLat = parseFloat(currentLatElement.value);
+        const currentLon = parseFloat(currentLonElement.value);
+        
+        if (isNaN(currentLat) || isNaN(currentLon)) {
+            showError('terrainError', 'Please provide valid implementation coordinates');
+            return;
+        }
+        
+        generate3DTerrain(currentLat, currentLon);
+    }
+});
+
+// Plot Radiation Data
+function plotRadiationData(data) {
+    if (!data || data.length === 0 || !document.getElementById('radiationChart')) {
+        console.error("Cannot plot radiation data: missing data or chart element");
+        return;
+    }
+    
+    try {
+        const dates = data.map(d => d.date);
+        const values = data.map(d => d.value);
+        
+        const shadeThreshold = Math.max(...values) * 0.3;
+        const shadedDays = data.filter(d => d.value < shadeThreshold);
+        
+        const trace1 = {
+            x: dates,
+            y: values,
+            type: 'scatter',
+            mode: 'lines+markers',
+            name: 'Solar Radiation',
+            line: {
+                color: 'blue',
+                width: 2
+            }
+        };
+        
+        const trace2 = {
+            x: shadedDays.map(d => d.date),
+            y: shadedDays.map(d => d.value),
+            type: 'scatter',
+            mode: 'markers',
+            name: 'Shaded Days',
+            marker: {
+                color: 'red',
+                size: 10
+            }
+        };
+        
+        const layout = {
+            title: `Solar Radiation Data for ${cityName || 'Selected Location'}`,
+            xaxis: {
+                title: 'Date'
+            },
+            yaxis: {
+                title: 'Solar Radiation (kWh/m²/day)'
+            },
+            legend: {
+                x: 0,
+                y: 1
+            }
+        };
+        
+        Plotly.newPlot('radiationChart', [trace1, trace2], layout);
+    } catch (error) {
+        console.error("Error plotting radiation data:", error);
+        showError('radiationError', 'Error plotting radiation data: ' + error.message);
+    }
+}
+
+// Run Solar Analysis
+function runSolarAnalysis(currentLat, currentLon, implDate, requiredEnergy, useRotation) {
+    try {
+        // Normalize solar values
+        const maxSolarValue = Math.max(...solarData.map(d => d.value));
+        const normalizedSolarData = solarData.map(d => ({
+            ...d,
+            normalized: d.value / maxSolarValue
+        }));
+        
+        // Calculate shading
+        const shadeThreshold = 0.3;
+        const shadedDays = normalizedSolarData.filter(d => d.normalized < shadeThreshold);
+        
+        // Calculate panel requirements
+        const panelEfficiency = 0.2;
+        const panelArea = 1.6;
+        let efficiencyFactor = 1.0;
+        
+        if (useRotation === 'y') {
+            efficiencyFactor = 1.25;
+        }
+        
+        const totalSolarEnergy = solarData.reduce((sum, d) => sum + d.value, 0);
+        const energyPerPanel = totalSolarEnergy * panelEfficiency * panelArea * efficiencyFactor;
+        const numPanels = Math.ceil(requiredEnergy / energyPerPanel);
+        
+        // Calculate optimal tilt angle
+        const dayOfYear = moment(implDate).dayOfYear();
+        const declination = 23.45 * Math.sin((360 * (dayOfYear - 81) / 365) * Math.PI / 180);
+        const optimalTiltAngle = Math.abs(currentLat - declination);
+        
+        // Display results
+        const analysisContent = document.getElementById('analysisContent');
+        const analysisResults = document.getElementById('analysisResults');
+        const rotationChart = document.getElementById('rotationChart');
+        const shadingChart = document.getElementById('shadingChart');
+        
+        if (!analysisContent || !analysisResults) {
+            console.error("Analysis results elements not found");
+            return;
+        }
+        
+        let resultsHTML = `
+            <p>📍 Using Selected Location: Lat: ${currentLat.toFixed(4)}, Lon: ${currentLon.toFixed(4)}</p>
+            <p>🔋 Estimated Number of Solar Panels Required: ${numPanels}</p>
+            <p>⚡ Estimated Energy Output per Panel: ${energyPerPanel.toFixed(2)} kWh/day</p>
+            <p>⚡ Total Estimated Energy Output: ${(numPanels * energyPerPanel).toFixed(2)} kWh/day</p>
+            <p>📐 Optimal Tilt Angle for Maximum Energy Generation: ${optimalTiltAngle.toFixed(2)}°</p>
+            <p>🧭 Optimal Azimuth Angle: 180° (South-facing for max exposure)</p>
+        `;
+        
+        if (useRotation === 'y' && rotationChart) {
+            resultsHTML += `<p>✅ Rotatable Solar Panels Selected! Higher energy generation.</p>`;
+            
+            // Calculate rotation angles
+            const solarTime = Array.from({length: 13}, (_, i) => i + 6);
+            const rotationAngles = solarTime.map(hour => {
+                const hourAngle = (hour - 12) * 15;
+                const altitudeAngle = Math.asin(
+                    Math.sin(currentLat * Math.PI / 180) * Math.sin(declination * Math.PI / 180) +
+                    Math.cos(currentLat * Math.PI / 180) * Math.cos(declination * Math.PI / 180) * Math.cos(hourAngle * Math.PI / 180)
+                ) * 180 / Math.PI;
                 
-                // Move to next tab
-                document.querySelector('.tab[data-tab="analysis"]').click();
-                
-            } catch (error) {
-                showError('radiationError', 'Error fetching radiation data: ' + error.message);
-            }
-        });
-        
-        // Run Analysis
-        document.getElementById('runAnalysis').addEventListener('click', function() {
-            if (solarData.length === 0) {
-                showError('analysisError', 'Please fetch solar radiation data first');
-                return;
-            }
+                return Math.atan(Math.tan(altitudeAngle * Math.PI / 180) / Math.cos(hourAngle * Math.PI / 180)) * 180 / Math.PI;
+            });
             
-            const currentLat = parseFloat(document.getElementById('currentLat').value);
-            const currentLon = parseFloat(document.getElementById('currentLon').value);
-            const implDate = document.getElementById('implDate').value;
-            const requiredEnergy = parseFloat(document.getElementById('requiredEnergy').value);
-            const useRotation = document.getElementById('useRotation').value;
-            
-            if (isNaN(currentLat) || isNaN(currentLon) || !implDate || isNaN(requiredEnergy)) {
-                showError('analysisError', 'Please fill all fields with valid values');
-                return;
-            }
-            
-            // Run analysis
-            runSolarAnalysis(currentLat, currentLon, implDate, requiredEnergy, useRotation);
-        });
-        
-        // Generate 3D Terrain
-        document.getElementById('generate3DTerrain').addEventListener('click', function() {
-            const currentLat = parseFloat(document.getElementById('currentLat').value);
-            const currentLon = parseFloat(document.getElementById('currentLon').value);
-            
-            if (isNaN(currentLat) || isNaN(currentLon)) {
-                showError('terrainError', 'Please provide valid implementation coordinates');
-                return;
-            }
-            
-            generate3DTerrain(currentLat, currentLon);
-        });
-        
-        // Plot Radiation Data
-        function plotRadiationData(data) {
-            const dates = data.map(d => d.date);
-            const values = data.map(d => d.value);
-            
-            const shadeThreshold = Math.max(...values) * 0.3;
-            const shadedDays = data.filter(d => d.value < shadeThreshold);
-            
-            const trace1 = {
-                x: dates,
-                y: values,
+            // Plot rotation angles
+            const trace = {
+                x: solarTime,
+                y: rotationAngles,
                 type: 'scatter',
                 mode: 'lines+markers',
-                name: 'Solar Radiation',
+                name: 'Optimal Rotation Angle',
                 line: {
-                    color: 'blue',
+                    color: 'green',
                     width: 2
                 }
             };
             
-            const trace2 = {
-                x: shadedDays.map(d => d.date),
-                y: shadedDays.map(d => d.value),
-                type: 'scatter',
-                mode: 'markers',
-                name: 'Shaded Days',
-                marker: {
-                    color: 'red',
-                    size: 10
-                }
-            };
-            
             const layout = {
-                title: `Solar Radiation Data for ${cityName}`,
+                title: 'Optimal Panel Rotation Angle Throughout the Day',
                 xaxis: {
-                    title: 'Date'
+                    title: 'Time (Hours)'
                 },
                 yaxis: {
-                    title: 'Solar Radiation (kWh/m²/day)'
-                },
-                legend: {
-                    x: 0,
-                    y: 1
+                    title: 'Optimal Rotation Angle (Degrees)'
                 }
             };
             
-            Plotly.newPlot('radiationChart', [trace1, trace2], layout);
+            Plotly.newPlot('rotationChart', [trace], layout);
+            rotationChart.classList.remove('hidden');
+        } else if (rotationChart) {
+            rotationChart.classList.add('hidden');
         }
         
-        // Run Solar Analysis
-        function runSolarAnalysis(currentLat, currentLon, implDate, requiredEnergy, useRotation) {
-            // Normalize solar values
-            const maxSolarValue = Math.max(...solarData.map(d => d.value));
-            const normalizedSolarData = solarData.map(d => ({
-                ...d,
-                normalized: d.value / maxSolarValue
-            }));
-            
-            // Calculate shading
-            const shadeThreshold = 0.3;
-            const shadedDays = normalizedSolarData.filter(d => d.normalized < shadeThreshold);
-            
-            // Calculate panel requirements
-            const panelEfficiency = 0.2;
-            const panelArea = 1.6;
-            let efficiencyFactor = 1.0;
-            
-            if (useRotation === 'y') {
-                efficiencyFactor = 1.25;
-            }
-            
-            const totalSolarEnergy = solarData.reduce((sum, d) => sum + d.value, 0);
-            const energyPerPanel = totalSolarEnergy * panelEfficiency * panelArea * efficiencyFactor;
-            const numPanels = Math.ceil(requiredEnergy / energyPerPanel);
-            
-            // Calculate optimal tilt angle
-            const formattedImplDate = moment(implDate).format('YYYYMMDD');
-            const dayOfYear = moment(implDate).dayOfYear();
-            const declination = 23.45 * Math.sin((360 * (dayOfYear - 81) / 365) * Math.PI / 180);
-            const optimalTiltAngle = Math.abs(currentLat - declination);
-            
-            // Display results
-            let resultsHTML = `
-                <p>📍 Using Selected Location: Lat: ${currentLat.toFixed(4)}, Lon: ${currentLon.toFixed(4)}</p>
-                <p>🔋 Estimated Number of Solar Panels Required: ${numPanels}</p>
-                <p>⚡ Estimated Energy Output per Panel: ${energyPerPanel.toFixed(2)} kWh/day</p>
-                <p>⚡ Total Estimated Energy Output: ${(numPanels * energyPerPanel).toFixed(2)} kWh/day</p>
-                <p>📐 Optimal Tilt Angle for Maximum Energy Generation: ${optimalTiltAngle.toFixed(2)}°</p>
-                <p>🧭 Optimal Azimuth Angle: 180° (South-facing for max exposure)</p>
-            `;
-            
-            if (useRotation === 'y') {
-                resultsHTML += `<p>✅ Rotatable Solar Panels Selected! Higher energy generation.</p>`;
-                
-                // Calculate rotation angles
-                const solarTime = Array.from({length: 13}, (_, i) => i + 6);
-                const rotationAngles = solarTime.map(hour => {
-                    const hourAngle = (hour - 12) * 15;
-                    const altitudeAngle = Math.asin(
-                        Math.sin(currentLat * Math.PI / 180) * Math.sin(declination * Math.PI / 180) +
-                        Math.cos(currentLat * Math.PI / 180) * Math.cos(declination * Math.PI / 180) * Math.cos(hourAngle * Math.PI / 180)
-                    ) * 180 / Math.PI;
-                    
-                    return Math.atan(Math.tan(altitudeAngle * Math.PI / 180) / Math.cos(hourAngle * Math.PI / 180)) * 180 / Math.PI;
-                });
-                
-                // Plot rotation angles
-                const trace = {
-                    x: solarTime,
-                    y: rotationAngles,
-                    type: 'scatter',
-                    mode: 'lines+markers',
-                    name: 'Optimal Rotation Angle',
-                    line: {
-                        color: 'green',
-                        width: 2
-                    }
-                };
-                
-                const layout = {
-                    title: 'Optimal Panel Rotation Angle Throughout the Day',
-                    xaxis: {
-                        title: 'Time (Hours)'
-                    },
-                    yaxis: {
-                        title: 'Optimal Rotation Angle (Degrees)'
-                    }
-                };
-                
-                Plotly.newPlot('rotationChart', [trace], layout);
-                document.getElementById('rotationChart').classList.remove('hidden');
-            } else {
-                document.getElementById('rotationChart').classList.add('hidden');
-            }
-            
-            // Plot shading analysis
+        // Plot shading analysis if the chart element exists
+        if (shadingChart) {
             const shadingTrace = {
                 x: normalizedSolarData.map(d => d.date),
                 y: normalizedSolarData.map(d => d.normalized),
@@ -785,132 +888,253 @@
             };
             
             Plotly.newPlot('shadingChart', [shadingTrace, shadedTrace], shadingLayout);
-            document.getElementById('shadingChart').classList.remove('hidden');
-            
-            // Calculate economic analysis
-            const panelCost = 250; // USD per panel
-            const installationCost = 100; // USD per panel
-            const totalCost = numPanels * (panelCost + installationCost);
-            const energyCostSavings = 0.15; // USD per kWh
-            const annualSavings = (numPanels * energyPerPanel * 365) * energyCostSavings;
-            const paybackPeriod = totalCost / annualSavings;
-            
-            // Add economic analysis to results
-            resultsHTML += `
-                <h3>Economic Analysis</h3>
-                <p>💰 Total Solar Panel Cost: $${(numPanels * panelCost).toFixed(2)}</p>
-                <p>🔧 Installation Cost: $${(numPanels * installationCost).toFixed(2)}</p>
-                <p>💵 Total System Cost: $${totalCost.toFixed(2)}</p>
-                <p>💸 Estimated Annual Savings: $${annualSavings.toFixed(2)}</p>
-                <p>⏱️ Estimated Payback Period: ${paybackPeriod.toFixed(1)} years</p>
-            `;
-            
-            // Display warnings for heavily shaded days
-            if (shadedDays.length > 0) {
-                resultsHTML += `
-                    <h3>⚠️ Shading Warning</h3>
-                    <p>${shadedDays.length} days show significantly reduced solar radiation. Consider additional panels or alternative energy sources for these periods.</p>
-                `;
-            }
-            
-            // Display results
-            document.getElementById('analysisContent').innerHTML = resultsHTML;
-            document.getElementById('analysisResults').classList.remove('hidden');
-            document.getElementById('analysisError').classList.add('hidden');
+            shadingChart.classList.remove('hidden');
         }
         
-        // Generate 3D Terrain
-        function generate3DTerrain(lat, lon) {
-            try {
-                // Generate sample terrain data (in a real app, this would come from an API)
-                const size = 50;
-                const terrain = Array(size).fill().map(() => Array(size).fill(0));
-                
-                // Generate some random terrain features
-                for (let i = 0; i < 5; i++) {
-                    const centerX = Math.floor(Math.random() * size);
-                    const centerY = Math.floor(Math.random() * size);
-                    const height = Math.random() * 100 + 50;
-                    const radius = Math.random() * 10 + 5;
-                    
-                    for (let x = 0; x < size; x++) {
-                        for (let y = 0; y < size; y++) {
-                            const distance = Math.sqrt(Math.pow(x - centerX, 2) + Math.pow(y - centerY, 2));
-                            if (distance < radius) {
-                                terrain[x][y] += height * (1 - distance / radius);
-                            }
-                        }
+        // Calculate economic analysis
+        const panelCost = 250; // USD per panel
+        const installationCost = 100; // USD per panel
+        const totalCost = numPanels * (panelCost + installationCost);
+        const energyCostSavings = 0.15; // USD per kWh
+        const annualSavings = (numPanels * energyPerPanel * 365) * energyCostSavings;
+        const paybackPeriod = totalCost / annualSavings;
+        
+        // Add economic analysis to results
+        resultsHTML += `
+            <h3>Economic Analysis</h3>
+            <p>💰 Total Solar Panel Cost: $${(numPanels * panelCost).toFixed(2)}</p>
+            <p>🔧 Installation Cost: $${(numPanels * installationCost).toFixed(2)}</p>
+            <p>💵 Total System Cost: $${totalCost.toFixed(2)}</p>
+            <p>💸 Estimated Annual Savings: $${annualSavings.toFixed(2)}</p>
+            <p>⏱️ Estimated Payback Period: ${paybackPeriod.toFixed(1)} years</p>
+        `;
+        
+        // Display warnings for heavily shaded days
+        if (shadedDays.length > 0) {
+            resultsHTML += `
+                <h3>⚠️ Shading Warning</h3>
+                <p>${shadedDays.length} days show significantly reduced solar radiation. Consider additional panels or alternative energy sources for these periods.</p>
+            `;
+        }
+        
+        // Display results
+        analysisContent.innerHTML = resultsHTML;
+        analysisResults.classList.remove('hidden');
+        
+        const analysisError = document.getElementById('analysisError');
+        if (analysisError) analysisError.classList.add('hidden');
+    } catch (error) {
+        console.error("Error running solar analysis:", error);
+        showError('analysisError', 'Error running solar analysis: ' + error.message);
+    }
+}
+
+// Generate 3D Terrain
+function generate3DTerrain(lat, lon) {
+    try {
+        const terrainChart = document.getElementById('terrainChart');
+        const terrainError = document.getElementById('terrainError');
+        
+        if (!terrainChart) {
+            console.error("Terrain chart element not found");
+            return;
+        }
+        
+        // Generate sample terrain data (in a real app, this would come from an API)
+        const size = 50;
+        const terrain = Array(size).fill().map(() => Array(size).fill(0));
+        
+        // Generate some random terrain features
+        for (let i = 0; i < 5; i++) {
+            const centerX = Math.floor(Math.random() * size);
+            const centerY = Math.floor(Math.random() * size);
+            const height = Math.random() * 100 + 50;
+            const radius = Math.random() * 10 + 5;
+            
+            for (let x = 0; x < size; x++) {
+                for (let y = 0; y < size; y++) {
+                    const distance = Math.sqrt(Math.pow(x - centerX, 2) + Math.pow(y - centerY, 2));
+                    if (distance < radius) {
+                        terrain[x][y] += height * (1 - distance / radius);
                     }
                 }
-                
-                // Prepare data for 3D surface plot
-                const data = [{
-                    z: terrain,
-                    type: 'surface',
-                    contours: {
-                        z: {
-                            show: true,
-                            usecolormap: true,
-                            highlightcolor: "#42f462",
-                            project: {z: true}
-                        }
-                    }
-                }];
-                
-                const layout = {
-                    title: '3D Terrain Analysis',
-                    scene: {
-                        xaxis: {title: 'X Distance (m)'},
-                        yaxis: {title: 'Y Distance (m)'},
-                        zaxis: {title: 'Elevation (m)'}
-                    },
-                    margin: {
-                        l: 65,
-                        r: 50,
-                        b: 65,
-                        t: 90,
-                    }
-                };
-                
-                Plotly.newPlot('terrainChart', data, layout);
-                document.getElementById('terrainError').classList.add('hidden');
-                
-                // Add shadow analysis
-                calculateShadowEffects(terrain, lat, lon);
-                
-            } catch (error) {
-                showError('terrainError', 'Error generating 3D terrain: ' + error.message);
             }
         }
         
-        // Calculate shadow effects on solar panels
-        function calculateShadowEffects(terrain, lat, lon) {
-            // This would be a complex calculation in a real app
-            // For demo purposes, we'll just add a notification
-            const shadowNotice = document.createElement('div');
-            shadowNotice.className = 'info-box';
-            shadowNotice.innerHTML = `
-                <h3>Shadow Analysis</h3>
-                <p>Based on the terrain analysis at coordinates (${lat.toFixed(4)}, ${lon.toFixed(4)}), 
-                the following recommendations are made:</p>
-                <ul>
-                    <li>Mount panels at minimum height of 2.5m to avoid ground shadows</li>
-                    <li>Consider tree trimming in the southern exposure area</li>
-                    <li>Adjust panel spacing to at least 2m to minimize inter-panel shading</li>
-                </ul>
-            `;
-            document.getElementById('terrainChart').after(shadowNotice);
+        // Prepare data for 3D surface plot
+        const data = [{
+            z: terrain,
+            type: 'surface',
+            contours: {
+                z: {
+                    show: true,
+                    usecolormap: true,
+                    highlightcolor: "#42f462",
+                    project: {z: true}
+                }
+            }
+        }];
+        
+        const layout = {
+            title: '3D Terrain Analysis',
+            scene: {
+                xaxis: {title: 'X Distance (m)'},
+                yaxis: {title: 'Y Distance (m)'},
+                zaxis: {title: 'Elevation (m)'}
+            },
+            margin: {
+                l: 65,
+                r: 50,
+                b: 65,
+                t: 90,
+            }
+        };
+        
+        Plotly.newPlot('terrainChart', data, layout);
+        if (terrainError) terrainError.classList.add('hidden');
+        
+        // Add shadow analysis
+        calculateShadowEffects(terrain, lat, lon);
+        
+    } catch (error) {
+        console.error("Error generating 3D terrain:", error);
+        showError('terrainError', 'Error generating 3D terrain: ' + error.message);
+    }
+}
+    // Calculate shadow effects on solar panels
+function calculateShadowEffects(terrain, lat, lon) {
+    try {
+        const terrainChart = document.getElementById('terrainChart');
+        if (!terrainChart) return;
+        
+        // Calculate the sun's position throughout the day based on latitude/longitude
+        const size = terrain.length;
+        const shadowMap = Array(size).fill().map(() => Array(size).fill(0));
+        
+        // Get date from implementation date field
+        const implDateElement = document.getElementById('implDate');
+        const implDate = implDateElement ? implDateElement.value : new Date().toISOString().split('T')[0];
+        const dayOfYear = moment(implDate).dayOfYear();
+        
+        // Calculate sun declination
+        const declination = 23.45 * Math.sin((360 * (dayOfYear - 81) / 365) * Math.PI / 180);
+        
+        // Calculate sun positions throughout the day (simplified model)
+        const hourAngles = [-75, -60, -45, -30, -15, 0, 15, 30, 45, 60, 75]; // -5 to +5 hours from noon
+        
+        // For each hour, calculate shadows
+        hourAngles.forEach(hourAngle => {
+            // Calculate sun elevation and azimuth
+            const sinElevation = Math.sin(lat * Math.PI / 180) * Math.sin(declination * Math.PI / 180) +
+                               Math.cos(lat * Math.PI / 180) * Math.cos(declination * Math.PI / 180) * 
+                               Math.cos(hourAngle * Math.PI / 180);
+            const elevation = Math.asin(sinElevation) * 180 / Math.PI;
+            
+            // Skip if sun is below horizon
+            if (elevation <= 0) return;
+            
+            // Calculate azimuth
+            const sinAzimuth = -Math.cos(declination * Math.PI / 180) * 
+                              Math.sin(hourAngle * Math.PI / 180) / Math.cos(elevation * Math.PI / 180);
+            const cosAzimuth = (Math.sin(declination * Math.PI / 180) * Math.cos(lat * Math.PI / 180) -
+                              Math.cos(declination * Math.PI / 180) * Math.sin(lat * Math.PI / 180) * 
+                              Math.cos(hourAngle * Math.PI / 180)) / Math.cos(elevation * Math.PI / 180);
+            let azimuth = Math.atan2(sinAzimuth, cosAzimuth) * 180 / Math.PI;
+            if (azimuth < 0) azimuth += 360;
+            
+            // Calculate shadow lengths and directions
+            for (let x = 0; x < size; x++) {
+                for (let y = 0; y < size; y++) {
+                    const height = terrain[x][y];
+                    
+                    // Calculate shadow length
+                    const shadowLength = height / Math.tan(elevation * Math.PI / 180);
+                    
+                    // Calculate shadow direction
+                    const shadowX = Math.round(x - shadowLength * Math.sin(azimuth * Math.PI / 180));
+                    const shadowY = Math.round(y - shadowLength * Math.cos(azimuth * Math.PI / 180));
+                    
+                    // If shadow falls within terrain, mark it
+                    if (shadowX >= 0 && shadowX < size && shadowY >= 0 && shadowY < size) {
+                        shadowMap[shadowX][shadowY] += 1;
+                    }
+                }
+            }
+        });
+        
+        // Calculate total shadow coverage
+        let shadedCells = 0;
+        for (let x = 0; x < size; x++) {
+            for (let y = 0; y < size; y++) {
+                if (shadowMap[x][y] > 0) shadedCells++;
+            }
         }
         
-        // Show error message
-        function showError(elementId, message) {
-            const element = document.getElementById(elementId);
-            element.textContent = message;
-            element.classList.remove('hidden');
-            
-            // Scroll to error
-            element.scrollIntoView({behavior: 'smooth'});
+        const shadingPercentage = (shadedCells / (size * size)) * 100;
+        
+        // Display shadow analysis
+        const existingShadowNotice = document.querySelector('.shadow-analysis');
+        if (existingShadowNotice) {
+            existingShadowNotice.remove();
         }
+        
+        // Create recommendations based on shadow analysis
+        let recommendations = [];
+        if (shadingPercentage > 20) {
+            recommendations.push('Consider raising panel height to minimize terrain shadow effects');
+            recommendations.push('Evaluate alternate locations with less terrain shading');
+        } else if (shadingPercentage > 10) {
+            recommendations.push('Mount panels at minimum height of 2.5m to avoid ground shadows');
+            recommendations.push('Consider tree trimming in the southern exposure area');
+        } else {
+            recommendations.push('Current location has favorable shadow conditions');
+            recommendations.push('Standard panel height of 1.5m should be sufficient');
+        }
+        
+        recommendations.push('Adjust panel spacing to at least 2m to minimize inter-panel shading');
+        
+        // Calculate optimal panel height based on terrain
+        const maxTerrainHeight = Math.max(...terrain.flat());
+        const optimalHeight = Math.max(1.5, (maxTerrainHeight / 10) + 1);
+        
+        const shadowNotice = document.createElement('div');
+        shadowNotice.className = 'info-box shadow-analysis';
+        shadowNotice.innerHTML = `
+            <h3>Shadow Analysis</h3>
+            <p>Based on the terrain analysis at coordinates (${lat.toFixed(4)}, ${lon.toFixed(4)}), 
+            the following data was calculated:</p>
+            <ul>
+                <li>Shadow coverage: ${shadingPercentage.toFixed(1)}% of the area</li>
+                <li>Maximum terrain height: ${maxTerrainHeight.toFixed(1)}m</li>
+                <li>Recommended minimum panel height: ${optimalHeight.toFixed(1)}m</li>
+            </ul>
+            <h4>Recommendations:</h4>
+            <ul>
+                ${recommendations.map(rec => `<li>${rec}</li>`).join('')}
+            </ul>
+            <p>For more detailed analysis, consider on-site shadow measurements throughout different seasons.</p>
+        `;
+        document.getElementById('terrainChart').after(shadowNotice);
+        
+        // Add shadow data to the 3D plot
+        const shadowData = [{
+            z: shadowMap.map(row => row.map(val => val > 0 ? 10 : 0)),
+            type: 'surface',
+            opacity: 0.7,
+            colorscale: [
+                [0, 'rgba(0,0,0,0)'],
+                [1, 'rgba(0,0,0,0.8)']
+            ],
+            showscale: false
+        }];
+        
+        Plotly.addTraces('terrainChart', shadowData);
+        
+    } catch (error) {
+        console.error("Error calculating shadow effects:", error);
+        showError('terrainError', 'Error calculating shadow effects: ' + error.message);
+    }
+}
     </script>
 </body>
 </html>
